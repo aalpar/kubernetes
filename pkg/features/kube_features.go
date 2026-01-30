@@ -583,11 +583,6 @@ const (
 	// Enables maxUnavailable for StatefulSet
 	MaxUnavailableStatefulSet featuregate.Feature = "MaxUnavailableStatefulSet"
 
-	// owner: @cynepco3hahue(alukiano) @cezaryzukowski @k-wiatrzyk, @Tal-or (only for GA graduation)
-	//
-	// Allows setting memory affinity for a container based on NUMA topology
-	MemoryManager featuregate.Feature = "MemoryManager"
-
 	// owner: @xiaoxubeii
 	// kep: https://kep.k8s.io/2570
 	//
@@ -1156,6 +1151,7 @@ var defaultVersionedKubernetesFeatureGates = map[featuregate.Feature]featuregate
 
 	CSIServiceAccountTokenSecrets: {
 		{Version: version.MustParse("1.35"), Default: true, PreRelease: featuregate.Beta},
+		{Version: version.MustParse("1.36"), Default: true, PreRelease: featuregate.GA, LockToDefault: true}, // GA in 1.36; remove in 1.39
 	},
 
 	CSIVolumeHealth: {
@@ -1415,6 +1411,7 @@ var defaultVersionedKubernetesFeatureGates = map[featuregate.Feature]featuregate
 	KubeletFineGrainedAuthz: {
 		{Version: version.MustParse("1.32"), Default: false, PreRelease: featuregate.Alpha},
 		{Version: version.MustParse("1.33"), Default: true, PreRelease: featuregate.Beta},
+		{Version: version.MustParse("1.36"), Default: true, PreRelease: featuregate.GA, LockToDefault: true},
 	},
 
 	KubeletInUserNamespace: {
@@ -1491,12 +1488,6 @@ var defaultVersionedKubernetesFeatureGates = map[featuregate.Feature]featuregate
 	MaxUnavailableStatefulSet: {
 		{Version: version.MustParse("1.24"), Default: false, PreRelease: featuregate.Alpha},
 		{Version: version.MustParse("1.35"), Default: true, PreRelease: featuregate.Beta},
-	},
-
-	MemoryManager: {
-		{Version: version.MustParse("1.21"), Default: false, PreRelease: featuregate.Alpha},
-		{Version: version.MustParse("1.22"), Default: true, PreRelease: featuregate.Beta},
-		{Version: version.MustParse("1.32"), Default: true, PreRelease: featuregate.GA, LockToDefault: true},
 	},
 
 	MemoryQoS: {
@@ -1683,6 +1674,7 @@ var defaultVersionedKubernetesFeatureGates = map[featuregate.Feature]featuregate
 
 	RelaxedServiceNameValidation: {
 		{Version: version.MustParse("1.34"), Default: false, PreRelease: featuregate.Alpha},
+		{Version: version.MustParse("1.36"), Default: true, PreRelease: featuregate.Beta},
 	},
 
 	ReloadKubeletServerCertificateFile: {
@@ -1842,7 +1834,7 @@ var defaultVersionedKubernetesFeatureGates = map[featuregate.Feature]featuregate
 	TopologyManagerPolicyOptions: {
 		{Version: version.MustParse("1.26"), Default: false, PreRelease: featuregate.Alpha},
 		{Version: version.MustParse("1.28"), Default: true, PreRelease: featuregate.Beta},
-		{Version: version.MustParse("1.32"), Default: true, PreRelease: featuregate.GA},
+		{Version: version.MustParse("1.32"), Default: true, PreRelease: featuregate.GA, LockToDefault: true}, // remove in 1.37
 	},
 
 	TranslateStreamCloseWebsocketRequests: {
@@ -1989,6 +1981,7 @@ var defaultVersionedKubernetesFeatureGates = map[featuregate.Feature]featuregate
 
 	genericfeatures.DeclarativeValidation: {
 		{Version: version.MustParse("1.33"), Default: true, PreRelease: featuregate.Beta},
+		{Version: version.MustParse("1.36"), Default: true, PreRelease: featuregate.GA, LockToDefault: true}, // GA and LockToDefault in 1.36, remove in 1.39
 	},
 
 	genericfeatures.DeclarativeValidationTakeover: {
@@ -2066,12 +2059,6 @@ var defaultVersionedKubernetesFeatureGates = map[featuregate.Feature]featuregate
 
 	genericfeatures.StructuredAuthenticationConfigurationJWKSMetrics: {
 		{Version: version.MustParse("1.35"), Default: true, PreRelease: featuregate.Beta},
-	},
-
-	genericfeatures.StructuredAuthorizationConfiguration: {
-		{Version: version.MustParse("1.29"), Default: false, PreRelease: featuregate.Alpha},
-		{Version: version.MustParse("1.30"), Default: true, PreRelease: featuregate.Beta},
-		{Version: version.MustParse("1.32"), Default: true, PreRelease: featuregate.GA, LockToDefault: true},
 	},
 
 	genericfeatures.TokenRequestServiceAccountUIDValidation: {
@@ -2236,7 +2223,7 @@ var defaultKubernetesFeatureGateDependencies = map[featuregate.Feature][]feature
 
 	InPlacePodVerticalScalingExclusiveCPUs: {InPlacePodVerticalScaling},
 
-	InPlacePodVerticalScalingExclusiveMemory: {InPlacePodVerticalScaling, MemoryManager},
+	InPlacePodVerticalScalingExclusiveMemory: {InPlacePodVerticalScaling},
 
 	JobBackoffLimitPerIndex: {},
 
@@ -2283,8 +2270,6 @@ var defaultKubernetesFeatureGateDependencies = map[featuregate.Feature][]feature
 	MatchLabelKeysInPodTopologySpreadSelectorMerge: {MatchLabelKeysInPodTopologySpread},
 
 	MaxUnavailableStatefulSet: {},
-
-	MemoryManager: {},
 
 	MemoryQoS: {},
 
@@ -2438,7 +2423,7 @@ var defaultKubernetesFeatureGateDependencies = map[featuregate.Feature][]feature
 
 	WinOverlay: {},
 
-	WindowsCPUAndMemoryAffinity: {MemoryManager},
+	WindowsCPUAndMemoryAffinity: {},
 
 	WindowsGracefulNodeShutdown: {GracefulNodeShutdown},
 
@@ -2511,8 +2496,6 @@ var defaultKubernetesFeatureGateDependencies = map[featuregate.Feature][]feature
 	genericfeatures.StructuredAuthenticationConfigurationEgressSelector: {genericfeatures.StructuredAuthenticationConfiguration},
 
 	genericfeatures.StructuredAuthenticationConfigurationJWKSMetrics: {genericfeatures.StructuredAuthenticationConfiguration},
-
-	genericfeatures.StructuredAuthorizationConfiguration: {},
 
 	genericfeatures.TokenRequestServiceAccountUIDValidation: {},
 

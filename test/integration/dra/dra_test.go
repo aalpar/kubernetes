@@ -118,8 +118,15 @@ var (
 				Namespace(namespace).
 				RequestWithPrioritizedList(st.SubRequest("subreq-1", className, 1)).
 				Obj()
+)
 
-	numNodes = 8
+const (
+	numNodes       = 8
+	maxPodsPerNode = 5000 // This should never be the limiting factor, no matter how many tests run in parallel.
+
+	// schedulingTimeout is the time we grant the scheduler for one scheduling attempt,
+	// whether it's successful or not.
+	schedulingTimeout = 30 * time.Second
 )
 
 func TestDRA(t *testing.T) {
@@ -154,6 +161,7 @@ func TestDRA(t *testing.T) {
 				// Number of devices per slice is chosen so that Filter takes a few seconds:
 				// without a timeout, the test doesn't run too long, but long enough that a short timeout triggers.
 				tCtx.Run("FilterTimeout", func(tCtx ktesting.TContext) { testFilterTimeout(tCtx, 9) })
+				tCtx.Run("UsesAllResources", testUsesAllResources)
 			},
 		},
 		"GA": {
@@ -176,6 +184,7 @@ func TestDRA(t *testing.T) {
 					tCtx = tCtx.WithNamespace(namespace)
 					TestCreateResourceSlices(tCtx, 100)
 				})
+				tCtx.Run("UsesAllResources", testUsesAllResources)
 			},
 		},
 		"v1beta1": {
@@ -231,6 +240,8 @@ func TestDRA(t *testing.T) {
 				features.DRAExtendedResource:          true,
 			},
 			f: func(tCtx ktesting.TContext) {
+				// These tests must run in parallel as much as possible to keep overall runtime low!
+
 				tCtx.Run("AdminAccess", func(tCtx ktesting.TContext) { testAdminAccess(tCtx, true) })
 				tCtx.Run("Convert", testConvert)
 				tCtx.Run("ControllerManagerMetrics", testControllerManagerMetrics)
@@ -249,6 +260,7 @@ func TestDRA(t *testing.T) {
 				// in the experimental channel has an improvement that requires a higher number here than
 				// in the incubating and stable channels.
 				tCtx.Run("FilterTimeout", func(tCtx ktesting.TContext) { testFilterTimeout(tCtx, 20) })
+				tCtx.Run("UsesAllResources", testUsesAllResources)
 			},
 		},
 	} {
@@ -309,7 +321,7 @@ func createNodes(tCtx ktesting.TContext) {
 			Capacity: v1.ResourceList{
 				v1.ResourceCPU:    resource.MustParse("100"),
 				v1.ResourceMemory: resource.MustParse("1000"),
-				v1.ResourcePods:   resource.MustParse("100"),
+				v1.ResourcePods:   *resource.NewScaledQuantity(maxPodsPerNode, 0),
 			},
 			Phase: v1.NodeRunning,
 			Conditions: []v1.NodeCondition{
@@ -486,6 +498,8 @@ func testConvert(tCtx ktesting.TContext) {
 // when the AdminAccess feature is enabled, it also checks that the field
 // is only allowed to be used in namespace with the Resource Admin Access label
 func testAdminAccess(tCtx ktesting.TContext, adminAccessEnabled bool) {
+	tCtx.Parallel()
+
 	namespace := createTestNamespace(tCtx, nil)
 	claim1 := claim.DeepCopy()
 	claim1.Namespace = namespace
@@ -620,7 +634,7 @@ func testPrioritizedList(tCtx ktesting.TContext, enabled bool) {
 	))
 	tCtx.Eventually(func(tCtx ktesting.TContext) (*v1.Pod, error) {
 		return tCtx.Client().CoreV1().Pods(namespace).Get(tCtx, pod.Name, metav1.GetOptions{})
-	}).WithTimeout(10 * time.Second).WithPolling(time.Second).Should(schedulingAttempted)
+	}).WithTimeout(schedulingTimeout).WithPolling(time.Second).Should(schedulingAttempted)
 }
 
 type nodeInfo struct {
@@ -689,7 +703,7 @@ func testPrioritizedListScoring(tCtx ktesting.TContext) {
 		expectedSelectedRequest := fmt.Sprintf("%s/%s", claim.Spec.Devices.Requests[0].Name, claim.Spec.Devices.Requests[0].FirstAvailable[0].Name)
 		tCtx.Eventually(func(tCtx ktesting.TContext) (*resourceapi.ResourceClaim, error) {
 			return tCtx.Client().ResourceV1().ResourceClaims(namespace).Get(tCtx, claim.Name, metav1.GetOptions{})
-		}).WithTimeout(10 * time.Second).WithPolling(time.Second).Should(expectedAllocatedClaim(expectedSelectedRequest, nodeInfos[0]))
+		}).WithTimeout(schedulingTimeout).WithPolling(time.Second).Should(expectedAllocatedClaim(expectedSelectedRequest, nodeInfos[0]))
 	})
 
 	tCtx.Run("multi-claim", func(tCtx ktesting.TContext) {
@@ -749,13 +763,13 @@ func testPrioritizedListScoring(tCtx ktesting.TContext) {
 		expectedSelectedRequest := fmt.Sprintf("%s/%s", claim1.Spec.Devices.Requests[0].Name, claim1.Spec.Devices.Requests[0].FirstAvailable[1].Name)
 		tCtx.Eventually(func(tCtx ktesting.TContext) (*resourceapi.ResourceClaim, error) {
 			return tCtx.Client().ResourceV1().ResourceClaims(namespace).Get(tCtx, claimPrioritizedList1.Name, metav1.GetOptions{})
-		}).WithTimeout(10 * time.Second).WithPolling(time.Second).Should(expectedAllocatedClaim(expectedSelectedRequest, nodeInfos[2]))
+		}).WithTimeout(schedulingTimeout).WithPolling(time.Second).Should(expectedAllocatedClaim(expectedSelectedRequest, nodeInfos[2]))
 
 		// The first subrequest in claim2 is for nodeInfos[2], so it should be chosen.
 		expectedSelectedRequest = fmt.Sprintf("%s/%s", claim2.Spec.Devices.Requests[0].Name, claim2.Spec.Devices.Requests[0].FirstAvailable[0].Name)
 		tCtx.Eventually(func(tCtx ktesting.TContext) (*resourceapi.ResourceClaim, error) {
 			return tCtx.Client().ResourceV1().ResourceClaims(namespace).Get(tCtx, claimPrioritizedList2.Name, metav1.GetOptions{})
-		}).WithTimeout(10 * time.Second).WithPolling(time.Second).Should(expectedAllocatedClaim(expectedSelectedRequest, nodeInfos[2]))
+		}).WithTimeout(schedulingTimeout).WithPolling(time.Second).Should(expectedAllocatedClaim(expectedSelectedRequest, nodeInfos[2]))
 	})
 }
 
@@ -1186,6 +1200,8 @@ func testPublishResourceSlices(tCtx ktesting.TContext, haveLatestAPI bool, disab
 //
 // When enabled, it tries server-side-apply (SSA) with different clients. This is what DRA drivers should be using.
 func testResourceClaimDeviceStatus(tCtx ktesting.TContext, enabled bool) {
+	tCtx.Parallel()
+
 	namespace := createTestNamespace(tCtx, nil)
 
 	claim := &resourceapi.ResourceClaim{
@@ -1380,7 +1396,8 @@ func testMaxResourceSlice(tCtx ktesting.TContext) {
 	}
 }
 
-// testControllerManagerMetrics tests ResourceClaim metrics
+// testControllerManagerMetrics tests ResourceClaim metrics.
+// It must run sequentially.
 func testControllerManagerMetrics(tCtx ktesting.TContext) {
 	namespace := createTestNamespace(tCtx, nil)
 	class, _ := createTestClass(tCtx, namespace)
@@ -1708,13 +1725,13 @@ func testInvalidResourceSlices(tCtx ktesting.TContext) {
 			))
 			tCtx.Eventually(func(tCtx ktesting.TContext) (*v1.Pod, error) {
 				return tCtx.Client().CoreV1().Pods(namespace).Get(tCtx, pod.Name, metav1.GetOptions{})
-			}).WithTimeout(10 * time.Second).WithPolling(time.Second).Should(schedulingAttempted)
+			}).WithTimeout(schedulingTimeout).WithPolling(time.Second).Should(schedulingAttempted)
 
 			// Only check the ResourceClaim if we expected the Pod to schedule.
 			if tc.expectPodToSchedule {
 				tCtx.Eventually(func(tCtx ktesting.TContext) (*resourceapi.ResourceClaim, error) {
 					return tCtx.Client().ResourceV1().ResourceClaims(namespace).Get(tCtx, claim.Name, metav1.GetOptions{})
-				}).WithTimeout(10 * time.Second).WithPolling(time.Second).Should(gomega.HaveField("Status.Allocation", gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+				}).WithTimeout(schedulingTimeout).WithPolling(time.Second).Should(gomega.HaveField("Status.Allocation", gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
 					"Devices": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
 						"Results": gomega.HaveExactElements(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
 							"Driver": gomega.Equal(driverName),

@@ -147,7 +147,7 @@ linters:
       # Commentstart - Ignore commentstart issues for existing API group
       # TODO: For each existing API group, we aim to remove it over time.
       - text: "godoc for field .* should start with '.* ...'"
-        path: "staging/src/k8s.io/api/(admissionregistration|apiserverinternal|apps|authorization|autoscaling|batch|certificates|coordination|core|discovery|events|extensions|flowcontrol|imagepolicy|networking|node|policy|rbac|resource|scheduling|storage|storagemigration)"
+        path: "staging/src/k8s.io/api/(apiserverinternal|apps|authorization|autoscaling|batch|certificates|coordination|core|discovery|events|extensions|flowcontrol|imagepolicy|networking|node|policy|rbac|resource|scheduling|storage|storagemigration)"
       - text: "field .* is missing godoc comment"
         path: "staging/src/k8s.io/api/autoscaling/"
       
@@ -211,6 +211,18 @@ linters:
         path: "staging/src/k8s.io/api/resource/(v1|v1beta2)/types.go"
       - text: "field (CapacityRequirements.Requests|DeviceRequestAllocationResult.ConsumedCapacity) should not use a map type, use a list type with a unique name/identifier instead"
         path: "staging/src/k8s.io/api/resource/(v1|v1beta1|v1beta2)/types.go"
+      
+      # OptionalOrRequired is being enabled over time. For now, each API group should be added to this list until we comb through each group and fix the missing tags.
+      - text: "must be marked as optional or required"
+        path: "staging/src/k8s.io/api/(admission|apidiscovery|apiserverinternal|apps|authentication|authorization|autoscaling|batch|certificates|coordination|core|discovery|events|extensions|flowcontrol|networking|node|policy|rbac|resource|storage|storagemigration)"
+      
+      # OptionalOrRequired - Existing fields that are marked as both optional and required (based on standard optional vs kubebuilder:validation:Required) and should not be fixed.
+      - text: "field (PortStatus|IngressPortStatus)\\.Error must not be marked as both optional and required"
+        path: "staging/src/k8s.io/api/(core/v1|extensions/v1beta1|networking/(v1|v1beta1))"
+      
+      # jsontags: 'Port' must be capitalized for backward compatibility
+      - text: 'jsontags: field DaemonEndpoint.Port json tag does not match'
+        path: "staging/src/k8s.io/api/core/v1/types.go"
 
       - linters:
         - forbidigo
@@ -227,6 +239,7 @@ linters:
     - ineffassign
     - kubeapilinter
     - logcheck
+    - modernize
     - revive
     - sorted
     - staticcheck
@@ -387,7 +400,7 @@ linters:
               - "conditions" # Ensure conditions have the correct json tags and markers.
               - "conflictingmarkers" # Detect mutually exclusive markers on the same field.
               - "integers" # Ensure only int32 and int64 are used for integers.
-              # - "jsontags" # Ensure every field has a json tag.
+              - "jsontags" # Ensure every field has a json tag.
               # - "maxlength" # Ensure all strings and arrays have maximum lengths/maximum items. ONLY for CRDs until declarative markers exist in core types.
               # - "nobools" # Bools do not evolve over time, should use enums instead.
               # - "nofloats" # Ensure floats are not used.
@@ -396,12 +409,13 @@ linters:
               # - "nophase" # Ensure field names do not have the word "phase" in them.
               - "notimestamp" # Ensure fields are not named "timestamp", prefer "time".
               # - "optionalfields" # Ensure fields marked optional have omitempty and pointers.
-              # - "optionalorrequired" # Every field should be marked as `+optional` xor `+required`.
+              - "optionalorrequired" # Every field should be marked as `+optional` xor `+required`.
               # - "requiredfields" # Required fields should only be pointers when required based on the validity of the zero value, they should always have `omitempty`.
               - "ssatags" # Ensure lists have a listType tag.
               # - "uniquemarkers" # Ensure markers are not duplicated across field and type definitions.
               - "duplicatemarkers" #Prevent identical markers from being present on types and fields
               - "dependenttags" # Ensure markers dependent on other markers are present.
+              - "nodurations" # Ensure duration types are not used.
           lintersConfig:
             conditions:
               isFirstField: Ignore
@@ -501,6 +515,47 @@ linters:
         - pattern: ^gomega\.BeFalse$
           pkg: ^github.com/onsi/gomega$
           msg: "it does not produce a good failure message - use BeFalseBecause with an explicit printf-style failure message instead, or plain Go: if ... { ginkgo.Fail(...) }"
+    modernize:
+      # List of analyzers to disable.
+      # By default, all analyzers are enabled but in
+      # Kubernetes we want to be more selective and
+      # disable those which are not useful for it.
+      disable:
+        # Replace interface{} with any.
+        - any
+        # Replace for-range over b.N with b.Loop.
+        - bloop
+        # Replace []byte(fmt.Sprintf) with fmt.Appendf.
+        - fmtappendf
+        # Remove redundant re-declaration of loop variables.
+        - forvar
+        # Replace explicit loops over maps with calls to maps package.
+        - mapsloop
+        # Replace if/else statements with calls to min or max.
+        - minmax
+        # Suggest replacing omitempty with omitzero for struct fields.
+        - omitzero
+        # Replace 3-clause for loops with for-range over integers.
+        - rangeint
+        # Replace reflect.TypeOf(x) with TypeFor[T]().
+        - reflecttypefor
+        # Replace loops with slices.Contains or slices.ContainsFunc.
+        - slicescontains
+        # Replace sort.Slice with slices.Sort for basic types.
+        - slicessort
+        # Use iterators instead of Len/At-style APIs.
+        - stditerators
+        # Replace HasPrefix/TrimPrefix with CutPrefix.
+        - stringscutprefix
+        # Replace ranging over Split/Fields with SplitSeq/FieldsSeq.
+        - stringsseq
+        # Replace += with strings.Builder.
+        - stringsbuilder
+        # Replace context.WithCancel with t.Context in tests.
+        - testingcontext
+        # Replace wg.Add(1)/go/wg.Done() with wg.Go.
+        - waitgroup
+
     revive:
       # Only these rules are enabled.
       rules:
